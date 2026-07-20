@@ -302,7 +302,7 @@ body.role-staff .admin-only{display:none !important;}
 // ═══════════════════════════════════════════════════════
 // ⚙️ GITHUB मा upload गर्नुअघि आफ्नो Web App URL यहाँ राख्नुहोस्:
 // ═══════════════════════════════════════════════════════
-const FIXED_API_URL = 'https://script.google.com/macros/s/AKfycbzq1cgo-d8Vcw_cI_PYUcLyRJjukAu0qdiYmp9SIOGxESPHKcItLuoMJVZUwJ6Owu6WUQ/exec';
+const FIXED_API_URL = 'https://script.google.com/macros/s/AKfycbzh_c8kZ7DuScCAyyPJBMYxdfuzKAH-W4fIU9Vv_CYw4fmN8MN-gc5y0Ie1npWHYtBtNg/exec';
 
 const LS_URL = 'shram_api_url';
 const SS_KEY = 'shram_session';
@@ -493,11 +493,16 @@ function unpack(cols, rows, isWorker){
 }
 async function refreshData(blocking){
   const r = await api('list', {}, null, !!blocking);
-  if(r.ok){
+  if(!r.ok) return;
+  // नयाँ (सानो) ढाँचा भए त्यही, नभए पुरानो ढाँचा — दुवैसँग चल्छ
+  if(r.wrows && r.wcols){
     workers = unpack(r.wcols, r.wrows, true);
     pres    = unpack(r.pcols, r.prows, false);
-    renderAll();
+  } else {
+    workers = (r.workers||[]).map(w=>unpack(Object.keys(w), [Object.values(w)], true)[0]);
+    pres    = r.pres || [];
   }
+  renderAll();
 }
 function renderAll(){ renderDashboard(); renderWorkers(); renderPres(); renderReport(); }
 
