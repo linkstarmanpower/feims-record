@@ -467,9 +467,37 @@ async function manageUsers(){
 }
 
 // ================= DATA =================
+// server बाट आउने सानो payload (array) लाई object मा फर्काउने + देखाउने रूप मिलाउने
+function titleCase(v){
+  return String(v==null?'':v).trim().replace(/\s+/g,' ').toLowerCase()
+    .replace(/(^|[\s.'-])([a-z])/g, (m,a,b)=>a+b.toUpperCase());
+}
+const VALID_ST = ['Entry','Upload','Submitted','Approved','Rejected','Cancel'];
+function unpack(cols, rows, isWorker){
+  const out = new Array(rows.length);
+  for(let i=0;i<rows.length;i++){
+    const o = {};
+    for(let j=0;j<cols.length;j++) o[cols[j]] = rows[i][j];
+    if(isWorker){
+      if(o.name) o.name = titleCase(o.name);
+      o.passport = String(o.passport==null?'':o.passport).toUpperCase().replace(/[^A-Z0-9]/g,'');
+      const g = String(o.gender||'').trim().toUpperCase();
+      o.gender = (g==='M'||g==='MALE'||g==='पुरुष') ? 'Male' : (g==='F'||g==='FEMALE'||g==='महिला') ? 'Female' : '';
+      let st = String(o.status||'').trim().toUpperCase();
+      if(st==='CANCLE') st='CANCEL';
+      o.status = VALID_ST.find(x=>x.toUpperCase()===st) || 'Entry';
+    }
+    out[i] = o;
+  }
+  return out;
+}
 async function refreshData(blocking){
   const r = await api('list', {}, null, !!blocking);
-  if(r.ok){ workers = r.workers; pres = r.pres; renderAll(); }
+  if(r.ok){
+    workers = unpack(r.wcols, r.wrows, true);
+    pres    = unpack(r.pcols, r.prows, false);
+    renderAll();
+  }
 }
 function renderAll(){ renderDashboard(); renderWorkers(); renderPres(); renderReport(); }
 
@@ -499,15 +527,17 @@ function fyStats(fy){
   // ⏳ उड्न बाँकी = यसै आ.व. स्वीकृत मध्ये यस आ.व.भित्र नउडेका
   const pending = appIn.length - flownCohort;
   const flown = flownAll;
-  // ⊘ रद्द = स्वीकृति लिएर पनि कामदार नगएको, स्वीकृति रद्द गरी कोटा फिर्ता (approveDate अनुसार)
-  const cancelList = workers.filter(w=>w.status==='Cancel' && inFY(w.approveDate, fy));
-  // ✗ Rejected = विभागबाट आवेदन नै अस्वीकृत (स्वीकृति मिति हुँदैन — issueDate/newsDate अनुसार)
-  const rejList = workers.filter(w=>w.status==='Rejected' &&
-    (inFY(w.issueDate, fy) || (!w.issueDate && inFY(w.newsDate, fy)) ||
-     (!w.issueDate && !w.newsDate && inFY((w.createdAt||'').slice(0,10), fy))));
-  const rejNoDate = workers.filter(w=>w.status==='Rejected' && !w.issueDate && !w.newsDate && !w.createdAt);
+  // ⊘ Cancel = श्रम स्वीकृति लिएको मिति अनुसार (नभए दर्ता मिति)
+  const entryDate = w => String(w.createdAt||'').slice(0,10);
+  const cDate = w => w.approveDate || entryDate(w);
+  const cancelList = workers.filter(w=>w.status==='Cancel' && inFY(cDate(w), fy));
+  // ✗ Rejected = डाटा इन्ट्री (दर्ता) मिति अनुसार
+  const rejList = workers.filter(w=>w.status==='Rejected' && inFY(entryDate(w), fy));
+  // मिति नै नभएका — कुनै आ.व.मा नगनी छुट्टै चेतावनीमा देखाउने (दोहोरो गणना रोक्न)
+  const cancelNoDate = workers.filter(w=>w.status==='Cancel' && !cDate(w));
+  const rejNoDate = workers.filter(w=>w.status==='Rejected' && !entryDate(w));
   return { preIn, preM, preF, appIn, appM, appF, flown, flownAll, flownCohort, flownPrev,
-           pending, cancel: cancelList.length, rejected: rejList.length + rejNoDate.length, rejNoDate };
+           pending, cancel: cancelList.length, rejected: rejList.length, rejNoDate, cancelNoDate };
 }
 function renderDashboard(){
   const fy = currentFY();
@@ -523,7 +553,9 @@ function renderDashboard(){
   document.getElementById('d-rem-sub').textContent = `of ${s.appIn.length} approved this FY`;
   document.getElementById('d-cancel').textContent = s.cancel;
   document.getElementById('d-rejected').textContent = s.rejected;
-  document.getElementById('d-rej-sub').textContent = s.rejNoDate.length ? `incl. ${s.rejNoDate.length} undated` : '\u00a0';
+  document.getElementById('d-rej-sub').textContent = s.rejNoDate.length ? `⚠ ${s.rejNoDate.length} मिति नभएका (गनिएनन्)` : '\u00a0';
+  const cSub = document.querySelector('.stat-card.c-can .sub');
+  if(cSub) cSub.textContent = s.cancelNoDate.length ? `⚠ ${s.cancelNoDate.length} मिति नभएका (गनिएनन्)` : '\u00a0';
 }
 
 // ================= WORKERS =================
