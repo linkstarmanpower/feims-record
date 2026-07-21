@@ -110,7 +110,7 @@ body.role-staff .admin-only{display:none !important;}
     <div class="header-actions">
       <button onclick="refreshData(true)">🔄 Refresh</button>
       <button class="admin-only" onclick="exportBackup()">💾 Backup</button>
-      <button onclick="printAuditorList()">🧾 Auditor — Worker List</button>
+      <button onclick="printAuditorList()">🧾 Auditor — Worker List (Monthly/Yearly)</button>
       <button onclick="printDeptSummary()">📋 Department — Summary</button>
       <button onclick="printAuditReport()">📊 Full Report</button>
       <button class="admin-only" onclick="manageUsers()">👥 प्रयोगकर्ता</button>
@@ -893,20 +893,35 @@ function openReportWindow(title, bodyHtml){
 function printAuditorList(){
   const fy = currentFY();
   const s = fyStats(fy);
-  const list = s.appIn.slice().sort((a,b)=>String(a.approveDate).localeCompare(String(b.approveDate)));
-  if(!list.length){ alert('यस आ.व.मा श्रम स्वीकृति लिएको कुनै कामदार छैन।'); return; }
+  let list = s.appIn.slice();
+  // महिना छान्ने विकल्प — auditor लाई कहिलेकाहीँ मासिक चाहिन्छ
+  const menu = 'कुन अवधिको सूची print गर्ने?\n\n0 = पूरै आर्थिक वर्ष (Yearly)\n' +
+    FY_MONTH_ORDER.map((m,i)=>`${i+1} = ${m}`).join('\n');
+  const pick = prompt(menu, '0');
+  if(pick === null) return;
+  let periodLabel = 'पूरै आ.व. (Yearly)';
+  const pi = parseInt(pick, 10);
+  if(pi >= 1 && pi <= 12){
+    const mName = FY_MONTH_ORDER[pi-1];
+    list = list.filter(w => nepaliMonth(w.approveDate) === mName);
+    periodLabel = mName + ' महिना (Monthly)';
+  }
+  list.sort((a,b)=>String(a.approveDate).localeCompare(String(b.approveDate)));
+  if(!list.length){ alert(periodLabel + ' मा श्रम स्वीकृति लिएको कुनै कामदार छैन।'); return; }
+  const mCount = list.filter(w=>w.gender==='Male').length;
+  const fCount = list.filter(w=>w.gender==='Female').length;
   const rows = list.map((w,i)=>`<tr>
     <td>${i+1}</td><td>${w.name||'-'}</td><td>${w.passport||'-'}</td>
     <td>${gShort(w.gender)}</td>
     <td>${w.country||'-'}</td><td>${w.demandProfession||w.visaProfession||'-'}</td>
     <td>${w.approveDate||'-'}</td><td>${w.departDate||'<i>Pending</i>'}</td></tr>`).join('');
-  openReportWindow('कामदार विवरण (लेखापरीक्षण)', `
-    <h3>Final Approval — Worker List (${list.length})</h3>
+  openReportWindow('कामदार विवरण (लेखापरीक्षण) — ' + periodLabel, `
+    <h3>Final Approval — Worker List (${list.length}) — ${periodLabel}</h3>
     <table><thead><tr>
       <th>S.N.</th><th>Name</th><th>Passport No</th><th>Gender</th>
       <th>Country</th><th>Job Title</th><th>Approval Date</th><th>Departure Date</th>
     </tr></thead><tbody>${rows}
-      <tr class="report-total"><td colspan="6">Total (कर आधार)</td><td colspan="2">${list.length}</td></tr>
+      <tr class="report-total"><td colspan="6">Total (कर आधार) — M ${mCount} / F ${fCount}</td><td colspan="2">${list.length}</td></tr>
     </tbody></table>
     <p style="font-size:12px;color:#555;">नोट: रद्द भएका कामदारको श्रम स्वीकृति विभागबाटै रद्द गरी कोटा फिर्ता लिइएकाले यस सूचीमा समावेश छैन।</p>`);
 }
