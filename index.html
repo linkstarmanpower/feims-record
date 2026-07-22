@@ -108,14 +108,14 @@ body.role-staff .admin-only{display:none !important;}
       <p>Tokha-10, Kathmandu — श्रम स्वीकृति व्यवस्थापन प्रणाली (FEIMS Record)</p>
     </div>
     <div class="header-actions">
-      <button onclick="refreshData(true)">🔄 Refresh</button>
-      <button class="admin-only" onclick="exportBackup()">💾 Backup</button>
-      <button onclick="printAuditorList()">🧾 Auditor — Worker List (Monthly/Yearly)</button>
-      <button onclick="printDeptSummary()">📋 Department — Summary</button>
-      <button onclick="printAuditReport()">📊 Full Report</button>
-      <button class="admin-only" onclick="manageUsers()">👥 प्रयोगकर्ता</button>
-      <button onclick="openChangePass()">⚙️ Password</button>
-      <button onclick="logout()">🚪 Logout (<span id="who-is-in"></span>)</button>
+      <button onclick="refreshData(true)" title="Refresh">🔄 Refresh</button>
+      <button class="admin-only" onclick="exportBackup()" title="Backup">💾 Backup</button>
+      <button onclick="printAuditorList()" title="Auditor Worker List (Monthly/Yearly)">🧾 Auditor</button>
+      <button onclick="printDeptSummary()" title="Department Summary">📋 Department</button>
+      <button onclick="printAuditReport()" title="Full Report">📊 Full Report</button>
+      <button class="admin-only" onclick="manageUsers()" title="प्रयोगकर्ता व्यवस्थापन">👥</button>
+      <button onclick="openChangePass()" title="Password बदल्ने">⚙️</button>
+      <button onclick="logout()" title="Logout"><span style="display:none" id="who-is-in"></span>🚪</button>
     </div>
   </header>
 
@@ -139,6 +139,7 @@ body.role-staff .admin-only{display:none !important;}
     <button class="tab-btn active" onclick="switchTab(event,'tab-workers')">👷 Master Record</button>
     <button class="tab-btn" onclick="switchTab(event,'tab-pre')">📋 Pre-Permission</button>
     <button class="tab-btn" onclick="switchTab(event,'tab-report')">📊 Report</button>
+    <button class="tab-btn" onclick="switchTab(event,'tab-quota')">🎫 Quota Details</button>
   </div>
 
   <!-- TAB 1: WORKERS -->
@@ -227,8 +228,15 @@ body.role-staff .admin-only{display:none !important;}
   <!-- TAB 3: REPORT -->
   <div id="tab-report" class="tab-content">
     <div class="card">
-      <div class="card-title">📊 आ.व. <span id="rpt-fy"></span> को रिपोर्ट (Audit)</div>
+      <div class="card-title">📊 Report (आ.व. <span id="rpt-fy"></span>)</div>
       <div id="report-area"></div>
+    </div>
+  </div>
+
+  <div id="tab-quota" class="tab-content">
+    <div class="card">
+      <div class="card-title">🎫 Quota Details — लट अनुसार कोटा विवरण (म्याद नसकिएका)</div>
+      <div id="quota-area"></div>
     </div>
   </div>
 </div>
@@ -524,13 +532,19 @@ function fyStats(fy){
   const appM = appIn.filter(w=>w.gender==='Male').length;
   const appF = appIn.filter(w=>w.gender==='Female').length;
   // ✈ विभागका लागि: यस आ.व.मा साँच्चै उडेका सबै (जुनसुकै आ.व.को स्वीकृति भए पनि)
-  const flownAll = workers.filter(w=>w.status==='Approved' && inFY(w.departDate, fy)).length;
+  const flownAllList = workers.filter(w=>w.status==='Approved' && inFY(w.departDate, fy));
+  const flownAll = flownAllList.length;
+  const flownM = flownAllList.filter(w=>w.gender==='Male').length;
+  const flownF = flownAllList.filter(w=>w.gender==='Female').length;
   // यसै आ.व. स्वीकृति लिएर यसै आ.व. उडेका
   const flownCohort = appIn.filter(w=>inFY(w.departDate, fy)).length;
   // अघिल्लो आ.व.को स्वीकृति लिएर यस आ.व. उडेका (कर अघिल्लै वर्ष तिरिसकेको)
   const flownPrev = flownAll - flownCohort;
   // ⏳ उड्न बाँकी = यसै आ.व. स्वीकृत मध्ये यस आ.व.भित्र नउडेका
-  const pending = appIn.length - flownCohort;
+  const pendList = appIn.filter(w=>!inFY(w.departDate, fy));
+  const pending = pendList.length;
+  const pendM = pendList.filter(w=>w.gender==='Male').length;
+  const pendF = pendList.filter(w=>w.gender==='Female').length;
   const flown = flownAll;
   // ⊘ Cancel = श्रम स्वीकृति लिएको मिति अनुसार (नभए दर्ता मिति)
   const entryDate = w => String(w.createdAt||'').slice(0,10);
@@ -541,8 +555,8 @@ function fyStats(fy){
   // मिति नै नभएका — कुनै आ.व.मा नगनी छुट्टै चेतावनीमा देखाउने (दोहोरो गणना रोक्न)
   const cancelNoDate = workers.filter(w=>w.status==='Cancel' && !cDate(w));
   const rejNoDate = workers.filter(w=>w.status==='Rejected' && !entryDate(w));
-  return { preIn, preM, preF, appIn, appM, appF, flown, flownAll, flownCohort, flownPrev,
-           pending, cancel: cancelList.length, rejected: rejList.length, rejNoDate, cancelNoDate };
+  return { preIn, preM, preF, appIn, appM, appF, flown, flownAll, flownM, flownF, flownCohort, flownPrev,
+           pending, pendM, pendF, cancel: cancelList.length, rejected: rejList.length, rejNoDate, cancelNoDate };
 }
 function renderDashboard(){
   const fy = currentFY();
@@ -823,35 +837,80 @@ function buildReportHTML(fy){
   const pKeys = Object.keys(pC).sort();
   let pRows = pKeys.map((c,i)=>`<tr><td>${i+1}</td><td>${c}</td><td>${pC[c].lots}</td><td>${pC[c].M}</td><td>${pC[c].F}</td><td><b>${pC[c].M+pC[c].F}</b></td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;">—</td></tr>';
 
+
   return `
-    <h3 style="margin:12px 0 8px;">🧾 कर प्रयोजन (आ.व. ${fy.label})</h3>
-    <table class="report-table"><thead><tr><th>Description</th><th>Count</th></tr></thead><tbody>
-      <tr style="background:#fef3c7;"><td><b>Final Approval — कर आधार</b></td><td style="font-size:15px;"><b>${s.appIn.length}</b> (पु. ${s.appM} / म. ${s.appF})</td></tr>
-      <tr><td>Cancel</td><td><b>${s.cancel}</b></td></tr>
-      <tr><td>Rejected</td><td><b>${s.rejected}</b></td></tr>
+    <h3 style="margin:12px 0 8px;">🧾 कुल संख्या (आ.व. ${fy.label})</h3>
+    <table class="report-table"><thead><tr><th>Description</th><th>Count</th><th>Male</th><th>Female</th></tr></thead><tbody>
+      <tr style="background:#fef3c7;"><td><b>Final Approval</b></td><td style="font-size:15px;"><b>${s.appIn.length}</b></td><td>${s.appM}</td><td>${s.appF}</td></tr>
+      <tr><td>Cancel</td><td><b>${s.cancel}</b></td><td>-</td><td>-</td></tr>
+      <tr><td>Rejected</td><td><b>${s.rejected}</b></td><td>-</td><td>-</td></tr>
     </tbody></table>
     <p style="font-size:12px;color:#555;margin:6px 0 0;">नोट: रद्द भएका कामदारको श्रम स्वीकृति विभागबाटै रद्द गरी कोटा फिर्ता लिइएकाले कर आधारमा समावेश गरिएको छैन।</p>
 
-    <h3 style="margin:16px 0 8px;">📋 विभागलाई दिने थप विवरण</h3>
-    <table class="report-table"><thead><tr><th>Description</th><th>Count</th></tr></thead><tbody>
-      <tr><td>Pre-Permission (Lot ${s.preIn.length})</td><td><b>${s.preM+s.preF}</b> (पु. ${s.preM} / म. ${s.preF})</td></tr>
-      <tr><td>Departure</td><td><b>${s.flownAll}</b> (यसै आ.व.को स्वीकृति ${s.flownCohort} / अघिल्लो आ.व.को ${s.flownPrev})</td></tr>
-      <tr><td>Departure Pending</td><td><b>${s.pending}</b></td></tr>
+    <h3 style="margin:16px 0 8px;">📋 इजाजतपत्र नवीकरणको लागि विवरण (आ.व. ${fy.label})</h3>
+    <table class="report-table"><thead><tr><th>Description</th><th>Count</th><th>Male</th><th>Female</th></tr></thead><tbody>
+      <tr style="background:#e0f2fe;"><td><b>Pre-Permission</b> (Lot ${s.preIn.length})<br><small style="color:#555;">पूर्व स्वीकृति लिएको संख्या</small></td><td><b>${s.preM+s.preF}</b></td><td>${s.preM}</td><td>${s.preF}</td></tr>
+      <tr style="background:#e0f2fe;"><td><b>Final Approval</b><br><small style="color:#555;">अन्तिम श्रम स्वीकृति लिएको संख्या</small></td><td><b>${s.appIn.length}</b></td><td>${s.appM}</td><td>${s.appF}</td></tr>
+      <tr style="background:#e0f2fe;"><td><b>Departure</b><br><small style="color:#555;">कामदार उडाएको संख्या</small></td><td><b>${s.flownAll}</b></td><td>${s.flownM}</td><td>${s.flownF}</td></tr>
+      <tr style="background:#e0f2fe;"><td><b>Departure Pending</b><br><small style="color:#555;">श्रम स्वीकृति लिएको तर उडाउन बाँकी संख्या</small></td><td><b>${s.pending}</b></td><td>${s.pendM}</td><td>${s.pendF}</td></tr>
     </tbody></table>
+
     <h3 style="margin:16px 0 8px;">📅 Final Approval — Month-wise</h3>
     <table class="report-table"><thead><tr><th>S.N.</th><th>Month</th><th>M</th><th>F</th><th>Total</th></tr></thead>
     <tbody>${mRows}<tr class="report-total"><td colspan="2">Total</td><td>${s.appM}</td><td>${s.appF}</td><td>${s.appIn.length}</td></tr></tbody></table>
+
     <h3 style="margin:16px 0 8px;">🌍 Final Approval — Country-wise</h3>
     <table class="report-table"><thead><tr><th>S.N.</th><th>Country</th><th>M</th><th>F</th><th>Total</th></tr></thead>
     <tbody>${cRows}<tr class="report-total"><td colspan="2">Total</td><td>${s.appM}</td><td>${s.appF}</td><td>${s.appIn.length}</td></tr></tbody></table>
-    <h3 style="margin:16px 0 8px;">📋 देश अनुसार पूर्व स्वीकृति माग</h3>
-    <table class="report-table"><thead><tr><th>क्र.सं.</th><th>देश</th><th>लट</th><th>पुरुष माग</th><th>महिला माग</th><th>जम्मा</th></tr></thead>
+
+    <h3 style="margin:16px 0 8px;">🌍 Pre-Permission</h3>
+    <table class="report-table"><thead><tr><th>S.N.</th><th>Country</th><th>Lot</th><th>M</th><th>F</th><th>Total</th></tr></thead>
     <tbody>${pRows}<tr class="report-total"><td colspan="2">Total</td><td>${s.preIn.length}</td><td>${s.preM}</td><td>${s.preF}</td><td>${s.preM+s.preF}</td></tr></tbody></table>`;
+}
+
+function buildQuotaHTML(fy){
+  const today = new Date().toISOString().slice(0,10);
+  const normLot = v => String(v==null?'':v).trim().replace(/\.0+$/,'');
+  // Use = कुनै पनि आ.व.को अन्तिम स्वीकृति (कोटा जहिले प्रयोग भए पनि घट्छ)
+  const appByLot = {};
+  workers.forEach(w=>{
+    if(w.status!=='Approved') return;
+    const L=normLot(w.lotNo); if(!L) return;
+    if(!appByLot[L]) appByLot[L]={M:0,F:0};
+    if(w.gender==='Female') appByLot[L].F++; else appByLot[L].M++;
+  });
+  // सबै पूर्व स्वीकृति लट — expiry आजसम्म नभएका मात्र (म्याद नसकिएका)
+  const activeLots = pres.filter(p=>{
+    const e = p.expiryDate;
+    return !e || e >= today;   // expiry खाली वा भविष्यमा → अझै सक्रिय
+  }).sort((a,b)=>String(a.expiryDate||'9999').localeCompare(String(b.expiryDate||'9999')));
+
+  const lotRows = activeLots.map(p=>{
+    const L = normLot(p.lotNo);
+    const dM=Number(p.maleCount)||0, dF=Number(p.femaleCount)||0, dT=dM+dF;
+    const a=(appByLot[L]||{M:0,F:0}); const aT=a.M+a.F;
+    const lM=Math.max(0,dM-a.M), lF=Math.max(0,dF-a.F), lT=lM+lF;
+    const leftColor = lT>0 ? '#15803d' : '#64748b';
+    // expiry नजिक (३० दिनभित्र) भए चेतावनी रङ
+    const daysLeft = p.expiryDate ? Math.round((new Date(p.expiryDate)-new Date(today))/86400000) : 999;
+    const expColor = daysLeft<=30 ? '#b45309' : '#64748b';
+    return `<tr><td><b>${L||'-'}</b>${p.company?'<br><small style="color:#64748b;">'+p.company+'</small>':''}</td>
+      <td>${dM}M / ${dF}F <b>(${dT})</b></td>
+      <td>${a.M}M / ${a.F}F <b>(${aT})</b></td>
+      <td style="font-weight:700;color:${leftColor};">${lM}M / ${lF}F <b>(${lT})</b></td>
+      <td style="color:${expColor};font-size:12px;">${p.expiryDate||'-'}${daysLeft<=30&&daysLeft>=0?'<br>('+daysLeft+' दिन बाँकी)':''}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;">म्याद नसकिएका कुनै लट छैन</td></tr>';
+  return `
+    <table class="report-table"><thead><tr><th>Lot</th><th>माग (Demand)</th><th>Use</th><th>Available</th><th>म्याद (Expiry)</th></tr></thead>
+    <tbody>${lotRows}</tbody></table>
+    <p style="font-size:12px;color:#555;margin:6px 0 0;">म्याद नसकिएका (Expiry नआएका) लट मात्र देखाइएको छ। Available = माग − Use। M = पुरुष, F = महिला। म्याद ३० दिनभित्र सकिने लट सुन्तला रङमा देखिन्छ।</p>`;
 }
 function renderReport(){
   const fy = currentFY();
   document.getElementById('rpt-fy').textContent = fy.label;
   document.getElementById('report-area').innerHTML = buildReportHTML(fy);
+  const qfy = document.getElementById('quota-fy'); if(qfy) qfy.textContent = fy.label;
+  const qa = document.getElementById('quota-area'); if(qa) qa.innerHTML = buildQuotaHTML(fy);
 }
 // साझा print window helper
 // अघिल्लो आ.व.को स्वीकृति लिएर यस आ.व. उडेकाहरूको सूची
